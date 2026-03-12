@@ -1,73 +1,59 @@
 import streamlit as st
 import pandas as pd
 import joblib
+import plotly.express as px
+import os
 
-st.set_page_config(
-    page_title="Titanic Survival Predictor",
-    page_icon="🚢",
-    layout="centered"
-)
+st.set_page_config(page_title="Dashboard Titanic", layout="wide")
+st.title("🚢 Relatório Consolidado Titanic")
 
-st.markdown("""
-    <style>
-    .main {
-        background-color: #f5f7f9;
-    }
-    .stButton>button {
-        width: 100%;
-        border-radius: 5px;
-        height: 3em;
-        background-color: #007bff;
-        color: white;
-    }
-    </style>
-    """, unsafe_allow_html=True)
+diretorio_atual = os.path.dirname(os.path.abspath(__file__))
+MODEL_PATH = os.path.join(diretorio_atual, 'modelo_titanic.pkl')
+DATA_PATH = os.path.join(diretorio_atual, 'train_titanic.csv')
 
-@st.cache_resource
-def load_model():
-    return joblib.load('modelo_titanic.pkl')
+@st.cache_data
+def carregar_dados_e_gerar():
+    if not os.path.exists(MODEL_PATH) or not os.path.exists(DATA_PATH):
+        st.error("❌ Arquivos .pkl ou .csv não encontrados na raiz!")
+        st.stop()
+        
+    model = joblib.load(MODEL_PATH)
+    df_original = pd.read_csv(DATA_PATH)
+    
+    df_pred = df_original.copy()
+    df_pred['Sex'] = df_pred['Sex'].map({'male': 0, 'female': 1})
+    df_pred['Age'] = df_pred['Age'].fillna(df_pred['Age'].median())
+    df_pred['Fare'] = df_pred['Fare'].fillna(df_pred['Fare'].median())
+    
+    features = ['Pclass', 'Sex', 'Age', 'SibSp', 'Fare']
+    
+    df_original['Probabilidade'] = model.predict_proba(df_pred[features])[:, 1]
+    
+    return df_original
 
 try:
-    model = load_model()
-except:
-    st.error("❌ Arquivo 'modelo_titanic.pkl' não encontrado. Rode o script de treino primeiro!")
-    st.stop()
+    df_final = carregar_dados_e_gerar()
 
-st.title("🚢 Simulador de Sobrevivência: Titanic")
-st.info("Este app utiliza Inteligência Artificial (Random Forest) para prever se um passageiro sobreviveria ao desastre de 1912.")
+    st.subheader("📋 Histórico e Chances de Sobrevivência")
+    st.dataframe(
+        df_final[['PassengerId', 'Name', 'Sex', 'Age', 'Probabilidade']].sort_values(by='Probabilidade', ascending=False),
+        column_config={"Probabilidade": st.column_config.ProgressColumn("Chance", format="%.2f", min_value=0, max_value=1)},
+        use_container_width=True, hide_index=True
+    )
 
-with st.expander("📝 Dados do Passageiro", expanded=True):
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        sexo = st.selectbox("Sexo", ["Masculino", "Feminino"])
-        idade = st.slider("Idade", 0, 90, 25)
-        pclasse = st.radio("Classe do Navio", [1, 2, 3], horizontal=True, help="1ª Classe é a mais luxuosa")
+    st.divider()
 
-    with col2:
-        tarifa = st.number_input("Preço da Passagem (Fare)", min_value=0.0, max_value=512.0, value=30.0)
-        parentes = st.number_input("Nº de Irmãos/Cônjuges a bordo", 0, 10, 0)
+    st.subheader("📊 Relatório de Padrões")
+    c1, c2 = st.columns(2)
+    with c1:
+        fig_sex = px.histogram(df_final, x='Sex', y='Probabilidade', histfunc='avg', title="Chance Média por Sexo", color='Sex')
+        st.plotly_chart(fig_sex, use_container_width=True)
+    with c2:
+        fig_pclass = px.box(df_final, x='Pclass', y='Probabilidade', title="Distribuição por Classe", color='Pclass')
+        st.plotly_chart(fig_pclass, use_container_width=True)
 
-if st.button("Analisar Chance de Sobrevivência"):
-    sexo_bin = 0 if sexo == "Masculino" else 1
-    
-    dados = pd.DataFrame([[pclasse, sexo_bin, idade, parentes, tarifa]], 
-                         columns=['Pclass', 'Sex', 'Age', 'SibSp', 'Fare'])
-    
-    predicao = model.predict(dados)[0]
-    probabilidade = model.predict_proba(dados)[0][1]
+    st.success("Dashboard carregado com sucesso!")
 
-    st.markdown("---")
-    
-    if predicao == 1:
-        st.balloons()
-        st.success(f"### Resultado: SOBREVIVERIA")
-        st.metric(label="Probabilidade de Sobrevivência", value=f"{probabilidade:.1%}")
-        st.write("Baseado nas características, o modelo indica que este passageiro teria prioridade no acesso aos botes.")
-    else:
-        st.error(f"### Resultado: NÃO SOBREVIVERIA")
-        st.metric(label="Probabilidade de Sobrevivência", value=f"{probabilidade:.1%}")
-        st.write("Infelizmente, as estatísticas para este perfil de passageiro são desfavoráveis conforme os dados históricos.")
-
-st.markdown("---")
-st.caption("Projeto de Machine Learning utilizando o dataset clássico do Titanic.")
+except Exception as e:
+    st.error(f"Erro de compatibilidade: {e}")
+    st.warning("Dica: Se o erro persistir, rode o 'train.py' de novo para atualizar o arquivo .pkl")

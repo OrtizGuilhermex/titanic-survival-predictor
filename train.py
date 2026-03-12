@@ -15,7 +15,7 @@ x = df[features]
 y = df[target]
 
 model = RandomForestClassifier(n_estimators=100, max_depth=5, random_state=42)
-model.fit(x,y)
+model.fit(x, y)
 
 joblib.dump(model, 'modelo_titanic.pkl')
-print("✅ Modelo treinado para análise em massa!")
+print("✅ Modelo treinado com sucesso!")
